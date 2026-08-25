@@ -1,0 +1,13 @@
+{
+  "ble": {"device_name": "BT05", "characteristic_uuid": "0000ffe1-0000-1000-8000-00805f9b34fb", "reconnect_attempts": 4, "backoff_seconds": 0.5},
+  "motion": {"speed": 150, "translation_ms": 400, "turn_ms": 250, "settle_ms": 250, "watchdog_seconds": 2.0},
+  "camera": {"index": 0, "width": 640, "height": 480},
+  "localization": {"aruco_marker_id": 0, "min_confidence": 0.25, "color_hsv_low": [35, 80, 80], "color_hsv_high": [90, 255, 255], "vlm_grid_cols": 6, "vlm_grid_rows": 4},
+  "calibration": {"repetitions": 3, "noise_threshold_px": 2.0, "minimum_margin_frac": 0.2, "localization_timeout_seconds": 10.0, "post_motion_timeout_seconds": 2.0, "return_to_start_each_sample": false, "minimum_valid_samples": 2, "sample_retries": 1, "angular_noise_threshold_degrees": 1.0, "lost_recovery_pulses": 1, "retry_duration_scale": 0.65, "minimum_retry_pulse_ms": 150},
+  "guard": {"margin_frac": 0.12},
+  "ultrasonic": {"enabled": true, "map_cols": 12, "map_rows": 8, "cm_per_translation_pulse": 10.0, "rover_radius_cm": 12.0, "scan_angle_degrees": 50.0, "maximum_mapping_distance_cm": 150, "obstacle_ttl_cycles": 40},
+  "coverage": {"cols": 6, "rows": 4, "target": 0.9},
+  "ollama": {"url": "http://localhost:11434", "model": "qwen2.5vl:3b", "timeout_seconds": 20.0},
+  "runner": {"cycles": 100, "target_cycle_seconds": 1.0, "session_dir": "sessions"},
+  "simulator": {"wheel_slip": 0.03, "ble_latency_ms": 10, "px_per_second_at_full_speed": 180.0, "radians_per_second_at_full_speed": 3.0, "seed": 7}
+}

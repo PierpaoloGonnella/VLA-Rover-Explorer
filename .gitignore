@@ -1,0 +1,69 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python bytecode and tool caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.pytest-*/
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.tox/
+.nox/
+.hypothesis/
+.ipynb_checkpoints/
+
+# Packaging, builds and test coverage
+build/
+dist/
+*.egg-info/
+*.egg
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Rover runs: camera frames, diagnostics and JSONL telemetry
+sessions/
+
+# Arduino build products (keep .ino sources and libraries)
+*.hex
+*.eep
+*.elf
+*.map
+*.bin
+.pio/
+.arduinoIDE/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+config.local.yaml
+config.*.local.yaml
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# Editors and local agent state
+.idea/
+.vscode/
+.vs/
+.codex/
+.agents/
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/

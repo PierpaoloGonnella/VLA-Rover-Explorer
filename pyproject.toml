@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rover-explorer"
+version = "0.1.0"
+description = "A safe, discrete vision-language-action loop for a BLE Arduino rover"
+requires-python = ">=3.11"
+dependencies = [
+  "bleak>=0.21",
+  "opencv-contrib-python>=4.8",
+  "numpy>=1.24",
+  "requests>=2.31",
+  "pydantic>=2.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "pytest-asyncio>=0.23"]
+viewer = ["streamlit>=1.30"]
+
+[project.scripts]
+rover-explorer = "rover_explorer.runner:main"
+
+[tool.setuptools.packages.find]
+include = ["rover_explorer*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
