@@ -1,7 +1,13 @@
 /**********************************************************************
+  SPDX-License-Identifier: CC-BY-NC-SA-3.0
+
   Product     : Freenove 4WD Car for UNO
   Based on    : Multifunctional_RF24_Remote_Car.ino (Freenove)
   Purpose     : BLE remote control with an always-on ultrasonic stop guard.
+
+  Original work: Freenove Creative Technology Co., Ltd.
+  Modifications: Copyright (c) 2026 Pierpaolo Gonnella
+  License and attribution: ../../THIRD_PARTY_NOTICES.md
 
   IMPORTANT
   - The ultrasonic sensor NEVER commands motion.

@@ -20,6 +20,8 @@ __pycache__/
 
 # Packaging, builds and test coverage
 build/
+install/
+log/
 dist/
 *.egg-info/
 *.egg

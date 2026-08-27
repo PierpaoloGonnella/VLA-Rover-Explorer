@@ -2,7 +2,22 @@
 
 *A hybrid vision-language-action autonomy stack*
 
-`rover-explorer` is a safe discrete control stack for a Freenove 4WD Arduino rover observed by a fixed PC webcam. It supports a local Ollama vision-language-action policy, deterministic lawnmower coverage, and ultrasonic occupancy mapping with A* detours. Every decision boundary is stationary: the program captures and localizes, narrows the action set with geometric and ultrasonic guards, asks the selected policy for one action, sends one timed BLE motor pulse, explicitly stops, and waits for the scene to settle. The project remains deliberately comparative—ArUco and classical policies expose where a VLM helps, where its spatial reasoning does not, and by how much.
+[![CI](https://github.com/PierpaoloGonnella/VLA-Rover-Explorer/actions/workflows/ci.yml/badge.svg)](https://github.com/PierpaoloGonnella/VLA-Rover-Explorer/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/PierpaoloGonnella/VLA-Rover-Explorer)](https://github.com/PierpaoloGonnella/VLA-Rover-Explorer/releases)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](pyproject.toml)
+[![ROS 2](https://img.shields.io/badge/ROS%202-Rolling-22314E)](rover_explorer_ros2/)
+
+`rover-explorer` is a safety-preserving ROS 2 control stack for a Freenove 4WD
+Arduino rover observed by a fixed PC webcam. It combines ArUco localization,
+deterministic geometric control, ultrasonic occupancy mapping, A* detours, and
+an optional local Ollama vision-language model. The VLM reasons asynchronously
+about the present scene and recent history, while deterministic guards retain
+authority over every motor command.
+
+Version 2.0 keeps the original standalone Python runner for simulation and
+comparison, but ROS 2 is now the primary hardware runtime. The project remains
+deliberately comparative: ArUco and classical policies expose where a VLM
+helps, where its spatial reasoning fails, and by how much.
 
 ## Dedication
 
@@ -13,11 +28,53 @@
 > fairer, free from every kind of pollution. This is for you, who already
 > imagine a different tomorrow, with all our faith and hope.
 
+## Version 2.0 quick start on Windows
+
+Install ROS 2 Rolling using the
+[official Windows binary instructions](https://docs.ros.org/en/rolling/Get-Started/Installation/Windows-Install-Binary.html)
+and open an x64 Developer PowerShell. The commands below assume the ROS/Pixi
+workspace is `C:\dev\rolling`:
+
+```powershell
+git clone https://github.com/PierpaoloGonnella/VLA-Rover-Explorer.git
+Set-Location VLA-Rover-Explorer
+& "$env:USERPROFILE\.pixi\bin\pixi.exe" shell --manifest-path C:\dev\rolling\pixi.toml
+. C:\dev\rolling\local_setup.ps1
+colcon build --merge-install
+. .\install\local_setup.ps1
+ros2 launch rover_explorer_ros2 sim.launch.py policy:=sweep
+```
+
+For the physical rover, first flash the included ultrasonic safety firmware,
+pair the BT05, fix marker ID 0 rigidly to the chassis, and keep the camera still:
+
+```powershell
+ros2 launch rover_explorer_ros2 hardware.launch.py policy:=bottom_center planner:=astar_legacy
+```
+
+See [ROS 2 wrapper](#ros-2-wrapper) for dependencies, other policies, VLM
+observability, testing, and platform notes.
+
 ## Safety model
 
-The camera frame is the safety envelope. With the default `guard.margin_frac: 0.12`, translating actions whose calibrated prediction approaches the inset boundary are removed before any policy sees them. A small calibration-relative allowance covers pulse timing and wheel-slip error. Turns remain legal because they do not translate the rover. If localization is lost, only `BACKWARD` and `STOP` remain legal; recovery never turns while blind.
+The camera frame is the geometric safety envelope. Translating actions whose
+calibrated prediction approaches the inset boundary are removed before any
+policy sees them. If localization or guard data becomes stale, motion fails
+closed. Forward motion is also vetoed by the ultrasonic state immediately
+before it reaches the BLE bridge.
 
-Motors never run while Ollama is thinking. Every pulse has a `finally` stop, disconnect stops first on every path, and an independent two-second watchdog sends `A#0#0#` if completed-pulse heartbeats cease. This is a practical safety layer, not a formal physical guarantee: test slowly, keep a hand near power, and increase the margin for oblique views or high slip.
+The ROS 2 VLM is asynchronous and never writes directly to `/cmd_vel`. While it
+is thinking, the fast classic controller may continue following the last fresh,
+safe semantic waypoint. Every movement is a bounded pulse followed by STOP and
+settling; policy STOP preempts an active translation. Turn bursts require fresh
+pose feedback before they can rearm, preventing both logical deadlock and
+unverified continuous rotation.
+
+This is a practical research safety layer, not a certified physical guarantee.
+There is no dedicated depth or cliff sensor: semantic stair detection can fail.
+Test on a level enclosed surface, keep physical power within reach, and never
+operate near stairs, balconies, traffic, people, or animals without a separate
+physical barrier.
 
 ## Project architecture
 
@@ -66,10 +123,10 @@ flowchart LR
     LOG --> VIEW[Streamlit viewer / replay]
 ```
 
-`vlm`, `sweep`, and `obstacle_sweep` are alternative policies. The current
-`obstacle_sweep` path is deterministic and uses ArUco plus ultrasonic readings;
-it does not require Ollama. The VLM policy can reason about image semantics, but
-it is not part of the hard collision-safety boundary.
+`sweep` and `obstacle_sweep` are deterministic policies. In `vlm` mode the
+classic sweep controller remains active and follows semantic grid waypoints
+published asynchronously by the VLM; slow inference never pauses motion. The
+VLM is not part of the hard collision-safety boundary.
 
 ### Module responsibilities
 
@@ -248,13 +305,13 @@ that currently covers each responsibility.
 
 | Function | VLM role |
 |---|---|
-| Action selection with `--policy vlm` | Reads the annotated frame and selects one guard-approved numbered action |
+| Semantic guidance with `--policy vlm` | Reads the annotated grid and periodically selects a coarse target cell |
 | Explanation | Returns a short reason and confidence, stored in the session log |
 | Coarse localization with `--localizer vlm` | Optional experimental grid-cell estimate; not recommended for safety |
 | Boundary safety | No role: deterministic geometry removes unsafe actions before prompting |
 | Emergency ultrasonic stop | No role: executed locally by Arduino and checked again by Python |
-| Occupancy mapping | No role yet: sonar measurements populate the grid |
-| A* planning | No role: `obstacle_sweep` runs deterministic A* and does not call Ollama |
+| Occupancy mapping | Supplies a semantic goal; sonar measurements still populate blocked cells |
+| A* planning | Supplies the goal while deterministic A* computes the traversable route |
 | Motor timing and watchdog | No role: deterministic bounded pulses and independent stop paths |
 
 This separation is intentional. The VLM can contribute semantic judgement and
@@ -470,7 +527,9 @@ waypoint `C2`.
 
 ## Install
 
-Requires Python 3.11 or newer.
+Requires Python 3.10 or newer. ROS 2 hardware operation additionally requires a
+working ROS 2 installation and the dependencies declared in
+`rover_explorer_ros2/package.xml`.
 
 ```powershell
 python -m venv .venv
@@ -678,8 +737,180 @@ Run all checks with:
 python -m pytest -q
 ```
 
-The current 25-test suite covers newline protocol and extended sonar telemetry,
-stop-on-disconnect, geometric and ultrasonic guards, calibration recovery,
-ArUco and grid-label localization, VLM fallbacks, occupancy-ray projection,
-obstacle inflation, A* routing, and complete simulated runs of both `sweep` and
-`obstacle_sweep`.
+The release suite contains 49 Python core tests, four ROS safety tests, and four
+ROS launch/motion tests. It covers newline protocol and extended sonar
+telemetry, stop-on-disconnect, geometric and ultrasonic guards, calibration
+recovery, ArUco and grid-label localization, VLM fallbacks, occupancy-ray
+projection, obstacle inflation, A* routing, simulated runs, immediate STOP
+preemption, and pose-verified turn-burst rearming.
+
+## ROS 2 wrapper
+
+The `rover_explorer_ros2` directory is the primary version 2.0 runtime and is
+tested on ROS 2 Rolling for Windows. Its dependencies are standard ROS 2 APIs,
+but other distributions should be treated as unverified until tested. It keeps
+the original Python implementation and firmware safety model intact and uses
+`ament_cmake` plus `ament_cmake_python` because ROS custom interfaces cannot be
+generated by a pure `ament_python` package. The only process that imports and
+writes through `RoverBle` is `ble_bridge_node`.
+
+On Ubuntu 24.04 use Jazzy; on Ubuntu 22.04 use Humble and replace `jazzy` in the
+package names below. Install ROS using the official ROS documentation, then:
+
+```bash
+sudo apt install ros-jazzy-cv-bridge ros-jazzy-vision-msgs \
+  ros-jazzy-image-transport ros-jazzy-ros2-aruco \
+  ros-jazzy-ros2-aruco-interfaces ros-jazzy-navigation2 \
+  ros-jazzy-nav2-bringup python3-colcon-common-extensions python3-rosdep
+python3 -m pip install -e .
+mkdir -p ~/ros2_ws/src
+ln -s "$PWD/rover_explorer_ros2" ~/ros2_ws/src/rover_explorer_ros2
+cd ~/ros2_ws
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install
+source install/setup.bash
+```
+
+On Windows, install ROS 2 Rolling from the official binary archive and satisfy
+its dependencies before building this workspace. The commands below assume ROS
+is in `C:\dev\rolling`; adjust that path for your installation. Start from an
+x64 Developer PowerShell so the MSVC tools are available, then enter the Pixi
+environment. The execution-policy change applies only to that process:
+
+```powershell
+& "$env:USERPROFILE\.pixi\bin\pixi.exe" shell --manifest-path C:\dev\rolling\pixi.toml
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+. C:\dev\rolling\local_setup.ps1
+Set-Location C:\path\to\VLA-Rover-Explorer
+colcon build --merge-install
+. .\install\local_setup.ps1
+ros2 launch rover_explorer_ros2 sim.launch.py policy:=sweep
+```
+
+PowerShell does not provide the `call` command. If you prefer an x64 Developer
+Command Prompt (`cmd.exe`), use the batch equivalents instead:
+
+```bat
+call C:\dev\rolling\local_setup.bat
+cd /d C:\path\to\VLA-Rover-Explorer
+colcon build --merge-install
+call install\local_setup.bat
+```
+
+The Windows build generates native `.exe` entry points for every Python node,
+so both `ros2 run` and `ros2 launch` work without relying on Unix shebangs.
+
+Run without hardware:
+
+```bash
+ros2 launch rover_explorer_ros2 sim.launch.py policy:=sweep planner:=astar_legacy
+ros2 launch rover_explorer_ros2 sim.launch.py policy:=obstacle_sweep planner:=nav2
+ros2 launch rover_explorer_ros2 sim.launch.py policy:=sweep record_rosbag:=true
+```
+
+Run on the rover. The launch file loads the installed
+`config/rover_params.yaml` by default:
+
+```powershell
+ros2 launch rover_explorer_ros2 hardware.launch.py policy:=vlm planner:=astar_legacy
+```
+
+To keep the rover at the safe bottom-centre image waypoint using only the fast
+closed-loop geometric policy, launch with:
+
+```powershell
+ros2 launch rover_explorer_ros2 hardware.launch.py policy:=bottom_center planner:=astar_legacy
+```
+
+The waypoint is recomputed from every new frame at `(frame_width/2,
+frame_height - calibrated_forward_pulse - rover_rear_extent - safety_offset)`
+and clamped to the guard's safe inset. On the 1280x720 hardware image the
+default target is `(640,545)`, keeping the chassis in view rather than only the
+ArUco centre. HOLD has Schmitt hysteresis: enter within 40 px, resume only after
+leaving 70 px. While held, heading noise is ignored. The policy reports
+`objective=stay_bottom_center` in each core decision.
+
+### Observe the VLM during a test
+
+With `policy:=vlm`, every response is published on `/rover/vlm/advisory`. In a
+second terminal with the same ROS setup loaded, inspect validity, hazard cells,
+the semantic target, rationale, and latency:
+
+```powershell
+ros2 topic echo /rover/vlm/advisory
+```
+
+Inspect `scene_description` together with `hazard_type`, `hazard_cells`, and
+`reason`. The description is generated from the original image without a grid.
+Unsupported hazards are rejected; a real staircase or drop-off must be present
+in the scene description before it remains latched.
+
+The VLM also acts as a hierarchical planner when
+`vlm_use_semantic_waypoint: true`. Each advisory exposes `objective`,
+`plan_steps`, `maneuver`, `temporal_context`, `stall_detected`, and
+`repeated_maneuver`. Temporal context includes earlier scenes, observed
+`/cmd_vel` pulses, ArUco displacement, the previous plan outcome, and sonar
+state. Targets that fail to produce progress are temporarily rejected.
+
+The classic controller executes the VLM waypoint through A* and remains subject
+to deterministic guards. Stair and drop-off cells cannot be part of a path. If
+a hazard cannot be localized, no alternate path exists, the floor is not
+clearly visible, or ArUco pose is lost, the system fails closed with STOP.
+
+The annotated VLM image is republished after each response. Red cells are
+hazards, green cells are clear, and the target is yellow:
+
+```powershell
+ros2 run rqt_image_view rqt_image_view
+```
+
+Select `/rover/vlm/debug_image` in the topic menu.
+
+If `rqt_image_view` is unavailable, the same images are stored in
+`sessions\ros2\<session>\vlm` and their events in `events.jsonl`. To see why a
+command was allowed or blocked:
+
+```powershell
+ros2 topic echo /rover/policy/classic_decision
+```
+
+To inspect the pulses that were actually executed and fed back into temporal
+memory:
+
+```powershell
+ros2 topic echo /cmd_vel
+```
+
+An authorized decision contains `Semantic scene age=...; corridor cells are
+clear`. A blocked decision reports the intersected hazard cell, stale scene, or
+unlocalized danger instead.
+
+`ros2_aruco` is comparison-only: after setting `camera_fx`, `camera_fy`,
+`camera_cx`, and `camera_cy` from the camera calibration,
+`/rover/localization/aruco_error_px` reports the projected pixel discrepancy
+while the custom detector remains authoritative. The classic
+policy accepts `planner:=astar_legacy` or requests `/compute_path_to_pose` from
+Nav2 with `planner:=nav2`; both results still pass through `motion_node`, the
+fresh guard state, and the BLE bridge's final sonar/emergency veto.
+
+For the physical marker mounted with its top edge toward the rover nose,
+`aruco_heading_offset_degrees: -90` converts the marker x-axis into the rover's
+forward axis. Simulation overrides this to zero. Motion is emitted as bounded
+`translation_ms`/`turn_ms` pulses separated by `settle_ms`; `turn_scale` reduces
+in-place wheel speed without weakening forward motion. The sweep controller
+also retains one turn direction across the +/-180-degree wrap boundary.
+
+Run the retained pytest suite plus the ROS safety and launch tests with:
+
+```bash
+cd ~/ros2_ws
+colcon test --event-handlers console_direct+
+colcon test-result --verbose
+```
+
+## License
+
+Original Python, ROS 2, and documentation code is licensed under the
+[MIT License](LICENSE). The modified Freenove-derived firmware remains under
+CC BY-NC-SA 3.0; see [Third-party notices](THIRD_PARTY_NOTICES.md). Freenove
+trademarks and upstream copyrights remain with their owner.
