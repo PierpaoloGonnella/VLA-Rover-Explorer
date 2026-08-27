@@ -108,4 +108,7 @@ class AppConfig(BaseModel):
 
 def load_config(path: str | Path = "config.yaml") -> AppConfig:
     """Load the JSON-compatible YAML configuration without an extra YAML dependency."""
-    return AppConfig.model_validate(json.loads(Path(path).read_text(encoding="utf-8")))
+    values = json.loads(Path(path).read_text(encoding="utf-8"))
+    if hasattr(AppConfig, "model_validate"):
+        return AppConfig.model_validate(values)
+    return AppConfig.parse_obj(values)

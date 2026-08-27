@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from rover_explorer_ros2.policy_vlm_node import main
+main()

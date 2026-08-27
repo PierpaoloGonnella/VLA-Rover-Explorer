@@ -29,8 +29,9 @@ class Localizer(ABC):
 
 
 class ArucoLocalizer(Localizer):
-    def __init__(self, marker_id: int = 0):
+    def __init__(self, marker_id: int = 0, heading_offset_radians: float = 0.0):
         self.marker_id = marker_id
+        self.heading_offset_radians = heading_offset_radians
         self.last_detected_ids: list[int] = []
         self.dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
         parameters = cv2.aruco.DetectorParameters()
@@ -48,7 +49,8 @@ class ArucoLocalizer(Localizer):
         points = corners[int(matches[0])].reshape(4, 2)
         centre = points.mean(axis=0)
         edge = points[1] - points[0]
-        heading = math.atan2(float(edge[1]), float(edge[0]))
+        heading = math.atan2(float(edge[1]), float(edge[0])) + self.heading_offset_radians
+        heading = (heading + math.pi) % (2 * math.pi) - math.pi
         perimeter = float(cv2.arcLength(points.astype(np.float32), True))
         confidence = min(1.0, perimeter / max(32.0, 0.2 * min(frame.shape[:2])))
         return RoverPose((float(centre[0]), float(centre[1])), heading, confidence)

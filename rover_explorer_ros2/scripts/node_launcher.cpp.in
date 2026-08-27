@@ -1,0 +1,21 @@
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+
+#include <vector>
+
+int wmain(int argc, wchar_t * argv[])
+{
+  wchar_t program[] = L"python";
+  wchar_t command_flag[] = L"-c";
+  wchar_t command[] = L"from rover_explorer_ros2.@NODE_MODULE@ import main; main()";
+
+  std::vector<wchar_t *> python_args;
+  python_args.reserve(static_cast<size_t>(argc) + 2U);
+  python_args.push_back(program);
+  python_args.push_back(command_flag);
+  python_args.push_back(command);
+  for (int index = 1; index < argc; ++index) {
+    python_args.push_back(argv[index]);
+  }
+  return Py_Main(static_cast<int>(python_args.size()), python_args.data());
+}

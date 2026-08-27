@@ -1,6 +1,6 @@
 {
   "ble": {"device_name": "BT05", "characteristic_uuid": "0000ffe1-0000-1000-8000-00805f9b34fb", "reconnect_attempts": 4, "backoff_seconds": 0.5},
-  "motion": {"speed": 170, "translation_ms": 250, "turn_ms": 180, "settle_ms": 500, "watchdog_seconds": 2.0},
+  "motion": {"speed": 220, "translation_ms": 400, "turn_ms": 160, "settle_ms": 400, "watchdog_seconds": 2.0},
   "camera": {"index": 0, "width": 1280, "height": 720},
   "localization": {"aruco_marker_id": 0, "min_confidence": 0.25, "color_hsv_low": [35, 80, 80], "color_hsv_high": [90, 255, 255], "vlm_grid_cols": 6, "vlm_grid_rows": 4},
   "calibration": {"repetitions": 3, "noise_threshold_px": 1.5, "minimum_margin_frac": 0.15, "localization_timeout_seconds": 10.0, "post_motion_timeout_seconds": 3.0, "return_to_start_each_sample": false, "minimum_valid_samples": 2, "sample_retries": 2, "angular_noise_threshold_degrees": 1.0, "lost_recovery_pulses": 1, "retry_duration_scale": 0.65, "minimum_retry_pulse_ms": 150},

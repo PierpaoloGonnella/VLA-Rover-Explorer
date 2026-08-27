@@ -79,7 +79,15 @@ def draw_grid(
             mapping[label] = (col, row)
             _outlined_text(result, label, (round(col*w/coverage.cols)+5, round(row*h/coverage.rows)+22), .55)
     if pose is not None:
-        cv2.circle(result, tuple(round(v) for v in pose.centre), 8, (255, 0, 255), 2)
+        start = tuple(round(v) for v in pose.centre)
+        cv2.circle(result, start, 8, (255, 0, 255), 2)
+        if pose.heading is not None:
+            end = (
+                round(pose.centre[0] + math.cos(pose.heading) * 70),
+                round(pose.centre[1] + math.sin(pose.heading) * 70),
+            )
+            cv2.arrowedLine(result, start, end, (255, 0, 255), 4, tipLength=.25)
+            _outlined_text(result, "FRONT", (end[0] + 5, end[1] - 5), .5)
     return result, mapping
 
 
@@ -89,4 +97,3 @@ def highlight_action(frame: np.ndarray, pose: RoverPose, transform: BodyToImage,
     end = tuple(round(v) for v in transform.predict(pose, action))
     cv2.arrowedLine(result, start, end, (0, 255, 255), 5, tipLength=.25)
     return result
-

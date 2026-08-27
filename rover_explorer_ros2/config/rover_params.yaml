@@ -1,0 +1,103 @@
+/**:
+  ros__parameters:
+    frame_id: rover_camera
+    map_frame_id: map
+    camera_index: 0
+    camera_width: 1280
+    camera_height: 720
+    camera_fps: 10.0
+    aruco_marker_id: 0
+    # Marker +x points right; the rover nose points toward the marker top edge.
+    aruco_heading_offset_degrees: -90.0
+    min_confidence: 0.25
+    localization_backend: aruco_custom
+    aruco_compare_topic: /aruco/markers
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    device_name: BT05
+    characteristic_uuid: 0000ffe1-0000-1000-8000-00805f9b34fb
+    reconnect_attempts: 4
+    backoff_seconds: 0.5
+    watchdog_seconds: 2.0
+    sonar_publish_hz: 10.0
+    speed: 220
+    # Session 20260827-234443 measured about 160 px at 400 ms. A shorter pulse
+    # gives the 5 Hz policy time to close the loop without crossing the target.
+    translation_ms: 180
+    turn_ms: 160
+    settle_ms: 400
+    turn_scale: 0.85
+    recovery_scan_timeout_seconds: 2.5
+    recovery_cooldown_ms: 250
+    # Hard motor-layer guard against repeated full rotations.
+    max_consecutive_turn_pulses: 3
+    # A completed turn burst is rearmed only after a fresh pose confirms
+    # meaningful progress in the commanded direction. The cumulative limit
+    # still prevents an erroneous policy from rotating through multiple laps.
+    turn_burst_recheck_ms: 150
+    turn_rearm_min_progress_degrees: 8.0
+    max_continuous_turn_degrees: 220.0
+    turn_pose_timeout_seconds: 1.0
+    pose_recovery_retry_seconds: 3.0
+    margin_frac: 0.12
+    # Bottom-centre target = image bottom minus one pulse, the measured rear
+    # chassis extent, and a final safety offset. HOLD uses Schmitt hysteresis.
+    bottom_center_safety_offset_px: 8.0
+    bottom_center_rover_rear_extent_px: 95.0
+    bottom_center_hold_enter_px: 40.0
+    bottom_center_hold_exit_px: 70.0
+    pose_timeout_seconds: 1.0
+    sonar_timeout_seconds: 1.0
+    sonar_stop_distance_m: 0.25
+    # Empirical estimate for PWM 220 / 180 ms at the current camera geometry:
+    # 160 px * 180/400 ~= 72 px. Recalibrate after moving the camera.
+    px_per_forward_pulse: 72.0
+    # Camera image coordinates have +y downward: a physical left turn reduces
+    # the measured ArUco heading. Approx. 28 degrees at PWM 220 for 160 ms.
+    radians_per_turn_pulse: -0.48
+    forward_axis_x: 1.0
+    forward_axis_y: 0.0
+    coverage_cols: 6
+    coverage_rows: 4
+    vlm_grid_cols: 12
+    vlm_grid_rows: 8
+    map_cols: 12
+    map_rows: 8
+    obstacle_ttl_cycles: 40
+    cm_per_translation_pulse: 10.0
+    rover_radius_cm: 12.0
+    scan_angle_degrees: 50.0
+    maximum_mapping_distance_cm: 150
+    policy: sweep
+    planner: astar_legacy
+    ollama_url: http://localhost:11434
+    ollama_model: qwen2.5vl:3b
+    # VLM inference is asynchronous. A cold model load may exceed 20 seconds;
+    # turns/recovery remain active, while translation waits for fresh clearance.
+    ollama_timeout_seconds: 20.0
+    ollama_keep_alive: 30m
+    vlm_min_advisory_confidence: 0.35
+    # The VLM maintains a persistent objective and semantic waypoint; the fast
+    # classic controller follows it through A* and deterministic safety gates.
+    vlm_use_semantic_waypoint: true
+    vlm_maneuver_timeout_seconds: 1.0
+    vlm_plan_progress_timeout_seconds: 10.0
+    vlm_plan_progress_minimum_px: 10.0
+    vlm_failed_target_cooldown_seconds: 45.0
+    vlm_memory_window_seconds: 20.0
+    vlm_stall_translation_attempts: 2
+    vlm_stall_displacement_px: 12.0
+    vlm_repeated_turn_attempts: 3
+    vlm_advisory_timeout_seconds: 60.0
+    # The overhead scene map is asynchronous and camera-fixed. Local motion is
+    # checked against hazard cells without tying it to an old rover pose.
+    vlm_scene_timeout_seconds: 45.0
+    vlm_hazard_lookahead_pulses: 2.0
+    vlm_hazard_clear_confirmations: 2
+    # Stairs/drop-offs remain in the persistent obstacle map until three
+    # consecutive raw-scene reports positively confirm clear visible ground.
+    vlm_severe_hazard_clear_confirmations: 3
+    log_directory: sessions/ros2
+    record_rosbag: false

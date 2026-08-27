@@ -4,15 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rover-explorer"
-version = "0.1.0"
-description = "A safe, discrete vision-language-action loop for a BLE Arduino rover"
-requires-python = ">=3.11"
+version = "2.0.0"
+description = "A safety-preserving ROS 2 vision-language-action stack for a BLE Arduino rover"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+readme = "README.md"
+authors = [{name = "Pierpaolo Gonnella"}]
+keywords = ["ros2", "robotics", "vlm", "arduino", "ble", "aruco"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
   "bleak>=0.21",
   "opencv-contrib-python>=4.8",
   "numpy>=1.24",
   "requests>=2.31",
-  "pydantic>=2.5",
+  "pydantic>=1.10",
 ]
 
 [project.optional-dependencies]
@@ -28,4 +41,3 @@ include = ["rover_explorer*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-

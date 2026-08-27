@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from rover_explorer_ros2.ble_bridge_node import main
+main()
