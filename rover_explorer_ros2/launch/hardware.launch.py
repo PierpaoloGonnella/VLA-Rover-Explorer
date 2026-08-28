@@ -17,6 +17,8 @@ def generate_launch_description():
     policy = LaunchConfiguration("policy")
     is_vlm = PythonExpression(["'", policy, "' == 'vlm'"])
     common = {"parameters": [params, {"policy": policy, "planner": LaunchConfiguration("planner")}], "output": "screen"}
+    # Localization and the deterministic safety nodes are native rclcpp
+    # executables. Retained *_python fallbacks are never co-launched.
     return LaunchDescription([
         DeclareLaunchArgument("params_file", default_value=PathJoinSubstitution([
             FindPackageShare("rover_explorer_ros2"), "config", "rover_params.yaml"

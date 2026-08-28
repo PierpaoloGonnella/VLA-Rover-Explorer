@@ -7,6 +7,8 @@ import launch_ros.actions
 import launch_testing
 import rclpy
 from geometry_msgs.msg import Twist
+from sensor_msgs.msg import Range
+from std_msgs.msg import UInt32
 
 from rover_explorer_ros2.msg import LegalActions, PolicyDecision, RoverPose
 
@@ -20,8 +22,8 @@ def generate_test_description():
             "legal_actions_timeout_seconds": 1.0,
             "translation_ms": 300,
             "turn_ms": 50,
-            "settle_ms": 0,
-            "recovery_scan_timeout_seconds": 0.0,
+            "settle_ms": 80,
+            "recovery_scan_timeout_seconds": 1.0,
             "recovery_cooldown_ms": 0,
             "max_consecutive_turn_pulses": 2,
             "turn_burst_recheck_ms": 50,
@@ -50,6 +52,9 @@ class TestMotionSafety(unittest.TestCase):
         self.legal = self.node.create_publisher(LegalActions, "/rover/legal_actions", 10)
         self.decisions = self.node.create_publisher(PolicyDecision, "/rover/policy/classic_decision", 10)
         self.poses = self.node.create_publisher(RoverPose, "/rover/pose", 10)
+        self.left_range = self.node.create_publisher(Range, "/rover/sonar/left", 10)
+        self.right_range = self.node.create_publisher(Range, "/rover/sonar/right", 10)
+        self.scan_sequence = self.node.create_publisher(UInt32, "/rover/sonar/scan_sequence", 10)
 
     def tearDown(self):
         self.node.destroy_node()
@@ -67,6 +72,73 @@ class TestMotionSafety(unittest.TestCase):
             self.decisions.publish(decision)
             rclpy.spin_once(self.node, timeout_sec=0.1)
         self.assertTrue(self.commands)
+        self.assertEqual(self.commands[-1].linear.x, 0.0)
+        self.assertEqual(self.commands[-1].angular.z, 0.0)
+
+    def test_exactly_one_cmd_vel_publisher(self):
+        deadline = time.monotonic() + 12.0
+        publishers = []
+        while time.monotonic() < deadline:
+            publishers = self.node.get_publishers_info_by_topic("/cmd_vel")
+            if publishers:
+                break
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        self.assertEqual(len(publishers), 1)
+
+    def test_bounded_translation_is_followed_by_explicit_stop(self):
+        legal = LegalActions()
+        legal.actions = ["forward", "stop"]
+        decision = PolicyDecision()
+        decision.action = "forward"
+        moving = False
+        stopped_after_motion = False
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and not stopped_after_motion:
+            self.legal.publish(legal)
+            self.decisions.publish(decision)
+            rclpy.spin_once(self.node, timeout_sec=0.03)
+            if not self.commands:
+                continue
+            command = self.commands[-1]
+            moving = moving or command.linear.x > 0.0
+            stopped_after_motion = moving and command.linear.x == 0.0 and command.angular.z == 0.0
+        self.assertTrue(moving)
+        self.assertTrue(stopped_after_motion, "bounded translation was not followed by STOP")
+
+    def test_emergency_legal_state_preempts_motion(self):
+        legal = LegalActions()
+        legal.actions = ["stop"]
+        legal.emergency_stop = True
+        decision = PolicyDecision()
+        decision.action = "forward"
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            self.legal.publish(legal)
+            self.decisions.publish(decision)
+            rclpy.spin_once(self.node, timeout_sec=0.03)
+            if self.commands and self.commands[-1].linear.x == 0.0:
+                break
+        self.assertTrue(self.commands)
+        self.assertEqual(self.commands[-1].linear.x, 0.0)
+        self.assertEqual(self.commands[-1].angular.z, 0.0)
+
+    def test_stale_guard_or_policy_data_forces_stop(self):
+        legal = LegalActions()
+        legal.actions = ["forward", "stop"]
+        decision = PolicyDecision()
+        decision.action = "forward"
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            self.legal.publish(legal)
+            self.decisions.publish(decision)
+            rclpy.spin_once(self.node, timeout_sec=0.03)
+            if self.commands and self.commands[-1].linear.x > 0.0:
+                break
+        self.assertTrue(self.commands and self.commands[-1].linear.x > 0.0)
+
+        deadline = time.monotonic() + 1.4
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
         self.assertEqual(self.commands[-1].linear.x, 0.0)
         self.assertEqual(self.commands[-1].angular.z, 0.0)
 
@@ -106,22 +178,47 @@ class TestMotionSafety(unittest.TestCase):
         self.assertLess(time.monotonic() - stop_requested, 0.18)
 
     def test_sonar_block_runs_reverse_then_turn_recovery(self):
-        deadline = time.monotonic() + 4.0
-        while time.monotonic() < deadline:
-            legal = LegalActions()
-            legal.actions = ["backward", "turn_left", "turn_right", "stop"]
-            legal.sonar_blocked = True
-            decision = PolicyDecision()
-            decision.action = "forward"
+        legal = LegalActions()
+        legal.actions = ["backward", "turn_left", "turn_right", "stop"]
+        legal.sonar_blocked = True
+        decision = PolicyDecision()
+        decision.action = "forward"
+        left = Range()
+        left.header.frame_id = "sonar_left"
+        left.range = 0.8
+        right = Range()
+        right.header.frame_id = "sonar_right"
+        right.range = 0.2
+
+        # A newly blocked front must hold STOP until a new completed scan is
+        # observed (or the bounded timeout expires).
+        self.commands.clear()
+        wait_deadline = time.monotonic() + 0.35
+        while time.monotonic() < wait_deadline:
             self.legal.publish(legal)
             self.decisions.publish(decision)
+            self.left_range.publish(left)
+            self.right_range.publish(right)
+            rclpy.spin_once(self.node, timeout_sec=0.03)
+        self.assertFalse(any(command.linear.x < 0 for command in self.commands))
+        self.assertFalse(any(command.angular.z != 0 for command in self.commands))
+
+        scan = UInt32()
+        scan.data = 1
+        deadline = time.monotonic() + 4.0
+        while time.monotonic() < deadline:
+            self.legal.publish(legal)
+            self.decisions.publish(decision)
+            self.left_range.publish(left)
+            self.right_range.publish(right)
+            self.scan_sequence.publish(scan)
             rclpy.spin_once(self.node, timeout_sec=0.05)
             reversed_once = any(command.linear.x < 0 for command in self.commands)
             turned_once = any(command.angular.z != 0 for command in self.commands)
             if reversed_once and turned_once:
                 break
         self.assertTrue(any(command.linear.x < 0 for command in self.commands))
-        self.assertTrue(any(command.angular.z != 0 for command in self.commands))
+        self.assertTrue(any(command.angular.z > 0 for command in self.commands))
 
     def test_turn_burst_rearms_on_pose_progress_then_blocks_a_stall(self):
         legal = LegalActions()
@@ -168,19 +265,25 @@ class TestMotionSafety(unittest.TestCase):
         # Leave the heading unchanged during the second burst. Its verification
         # must detect zero progress and keep the rover stopped instead of allowing
         # a third, potentially endless burst.
-        command_index = len(self.commands)
-        stall_deadline = time.monotonic() + 1.2
-        while time.monotonic() < stall_deadline:
+        # Let the already-started second burst finish and enter its stationary
+        # verification phase. Individual pulses inside that burst are expected;
+        # only motion after the failed verification would be a safety defect.
+        verification_deadline = time.monotonic() + 0.65
+        while time.monotonic() < verification_deadline:
             self.legal.publish(legal)
             self.decisions.publish(decision)
             self.poses.publish(pose)
             rclpy.spin_once(self.node, timeout_sec=0.03)
-        later = self.commands[command_index:]
-        later_turn_starts = 0
-        previous_turning = True
-        for command in later:
-            turning = command.angular.z > 0.0
-            if turning and not previous_turning:
-                later_turn_starts += 1
-            previous_turning = turning
-        self.assertEqual(later_turn_starts, 0, "stalled turn burst was incorrectly rearmed")
+
+        self.commands.clear()
+        blocked_deadline = time.monotonic() + 0.6
+        while time.monotonic() < blocked_deadline:
+            self.legal.publish(legal)
+            self.decisions.publish(decision)
+            self.poses.publish(pose)
+            rclpy.spin_once(self.node, timeout_sec=0.03)
+        self.assertTrue(self.commands)
+        self.assertTrue(
+            all(command.angular.z == 0.0 for command in self.commands),
+            "stalled turn burst was incorrectly rearmed",
+        )

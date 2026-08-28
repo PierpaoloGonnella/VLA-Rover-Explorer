@@ -7,7 +7,7 @@ int wmain(int argc, wchar_t * argv[])
 {
   wchar_t program[] = L"python";
   wchar_t command_flag[] = L"-c";
-  wchar_t command[] = L"from rover_explorer_ros2.@NODE_MODULE@ import main; main()";
+  wchar_t command[] = L"from rover_explorer_ros2.@PYTHON_NODE_MODULE@ import main; main()";
 
   std::vector<wchar_t *> python_args;
   python_args.reserve(static_cast<size_t>(argc) + 2U);

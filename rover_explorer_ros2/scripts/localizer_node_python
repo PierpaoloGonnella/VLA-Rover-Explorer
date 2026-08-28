@@ -1,0 +1,4 @@
+#!/usr/bin/env python3
+from rover_explorer_ros2.localizer_node import main
+
+main()

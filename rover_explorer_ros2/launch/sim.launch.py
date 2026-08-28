@@ -24,6 +24,8 @@ def generate_launch_description():
         "parameters": [params, sim_transform, {"policy": policy, "planner": LaunchConfiguration("planner")}],
         "output": "screen",
     }
+    # The localizer and deterministic safety nodes resolve to rclcpp executables.
+    # Python parity fallbacks are installed as *_python and are not launched.
     nodes = [
         Node(package=package, executable=_executable("simulator_node"), name="simulator_node", parameters=[params], output="screen"),
         Node(package=package, executable=_executable("localizer_node"), name="localizer_node", parameters=[params, {"aruco_heading_offset_degrees": 0.0}], output="screen"),

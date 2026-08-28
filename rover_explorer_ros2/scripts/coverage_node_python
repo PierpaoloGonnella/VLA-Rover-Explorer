@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from rover_explorer_ros2.coverage_node import main
+main()

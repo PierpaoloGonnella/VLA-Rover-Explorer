@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from rover_explorer_ros2.motion_node import main
+main()

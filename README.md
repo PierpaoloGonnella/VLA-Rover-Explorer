@@ -84,6 +84,16 @@ The PC owns localization, coverage, policy selection, obstacle mapping, A*,
 logging, and bounded BLE pulses. Either side can stop the rover; neither side
 can force the other to accept an unsafe forward command.
 
+The primary ROS 2 runtime is hybrid. Native C++17 `rclcpp` executables own
+ArUco/colour localization and the latency-sensitive deterministic nodes
+`motion_node`, `guard_node`, `coverage_node`, and `obstacle_grid_node`.
+Camera/BLE integration, logging, asynchronous VLM work, and the classic policy
+remain Python `rclpy` nodes. The split stays behind the existing topics and
+custom messages. Retained Python parity implementations are installed as
+`localizer_node_python`, `motion_node_python`, `guard_node_python`,
+`coverage_node_python`, and `obstacle_grid_node_python`; never launch a fallback
+beside its C++ counterpart.
+
 ```mermaid
 flowchart LR
     CAM[Fixed webcam] --> CS[CameraSource]
@@ -737,8 +747,9 @@ Run all checks with:
 python -m pytest -q
 ```
 
-The release suite contains 49 Python core tests, four ROS safety tests, and four
-ROS launch/motion tests. It covers newline protocol and extended sonar
+The release suite contains 49 Python core tests plus native localization,
+deterministic-logic, ROS parity, fail-closed, motion, guard, and simulation
+tests; `colcon test-result` reports the exact aggregate. It covers newline protocol and extended sonar
 telemetry, stop-on-disconnect, geometric and ultrasonic guards, calibration
 recovery, ArUco and grid-label localization, VLM fallbacks, occupancy-ray
 projection, obstacle inflation, A* routing, simulated runs, immediate STOP
@@ -797,8 +808,9 @@ colcon build --merge-install
 call install\local_setup.bat
 ```
 
-The Windows build generates native `.exe` entry points for every Python node,
-so both `ros2 run` and `ros2 launch` work without relying on Unix shebangs.
+The Windows build produces native C++ `.exe` files for localization and the four
+deterministic nodes, plus small native `.exe` launchers for each retained Python node, so both
+`ros2 run` and `ros2 launch` work without relying on Unix shebangs.
 
 Run without hardware:
 
@@ -884,6 +896,22 @@ ros2 topic echo /cmd_vel
 An authorized decision contains `Semantic scene age=...; corridor cells are
 clear`. A blocked decision reports the intersected hazard cell, stale scene, or
 unlocalized danger instead.
+
+The default `localizer_node` is native C++ and uses OpenCV's `DICT_4X4_50`
+detector with subpixel corner refinement. It accepts the same validated
+`bgr8`/`8UC3` image contract as the repository's Python fallback, including
+row padding, and rejects malformed dimensions, strides, lengths, or encodings
+without publishing a pose. Missing or low-confidence detections are never
+replaced by a cached pose. For parity diagnostics only, the retained fallback
+is available as `localizer_node_python`; do not launch it beside the default
+node on the same topics.
+
+Measure both implementations on the same lossless synthetic frame set after a
+build and overlay setup:
+
+```powershell
+python rover_explorer_ros2\test\benchmark_localizers.py --iterations 100 --assert-parity
+```
 
 `ros2_aruco` is comparison-only: after setting `camera_fx`, `camera_fy`,
 `camera_cx`, and `camera_cy` from the camera calibration,
