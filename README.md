@@ -177,7 +177,7 @@ that currently covers each responsibility.
 | Global/local path planning | ✅ | `ObstacleSweep`, `ObstacleGrid.astar()` | Current cell, target cell and blocked cells → four-neighbour A* path | Image-space grid; no continuous curvature or optimal-time trajectory |
 | World/occupancy model | 🟡 | `ObstacleGrid`, `CoverageTracker` | Sonar rays and visited poses → short-lived free/occupied/visited cells | Local 2D map; obstacles expire and the map is not persistent SLAM |
 | Obstacle perception | ✅ front / 🟡 sides | Arduino HC-SR04 scan | Front range while moving; left/centre/right while stopped → BLE telemetry | No rear sensing; lateral ranges are available only during a stationary scan |
-| Semantic obstacle classification | ❌ | — | Object identity/material → traversability class | The VLM currently does not write semantic labels into `ObstacleGrid` |
+| Semantic hazard mapping | 🟡 ROS 2 | VLM advisory + `policy_classic_node` | Hazard cells → temporary blocked route cells | Semantic hazards gate the ROS 2 planner, but are not material/class labels in the sonar `ObstacleGrid` and still depend on VLM reliability |
 | Localization | ✅ | `ArucoLocalizer` | Webcam frame → centre, heading and confidence | Marker must remain sharp and visible |
 | Alternative localization | ⚪ | `ColorBlobLocalizer`, `VlmLocalizer` | Frame → position or coarse grid cell | Colour has no heading; VLM localization is too coarse for the safety reference |
 | Motion-model calibration | ✅ | `calibrate.py`, `BodyToImage` | Observed short pulses → pixels/pulse, radians/pulse and forward axis | Image-space model; ultrasonic scale still needs `cm_per_translation_pulse` |
@@ -303,7 +303,7 @@ that currently covers each responsibility.
       <strong>NOT YET COVERED — ❌</strong><br><br>
       • Metric SLAM and reusable maps<br>
       • Dynamic-obstacle tracking and prediction<br>
-      • VLM semantic labels fused into the obstacle map<br>
+      • Persistent semantic object labels or a reusable semantic map<br>
       • Rear and continuous lateral sensing<br>
       • Encoder odometry and continuous closed-loop control<br>
       • Safety-certified hardware supervision
@@ -320,8 +320,8 @@ that currently covers each responsibility.
 | Coarse localization with `--localizer vlm` | Optional experimental grid-cell estimate; not recommended for safety |
 | Boundary safety | No role: deterministic geometry removes unsafe actions before prompting |
 | Emergency ultrasonic stop | No role: executed locally by Arduino and checked again by Python |
-| Occupancy mapping | Supplies a semantic goal; sonar measurements still populate blocked cells |
-| A* planning | Supplies the goal while deterministic A* computes the traversable route |
+| Occupancy mapping | In the ROS 2 runtime, advisory hazard cells form a temporary semantic overlay; sonar still supplies the physical occupancy cells |
+| A* planning | Supplies a semantic goal and temporary blocked cells while deterministic A* computes the traversable route |
 | Motor timing and watchdog | No role: deterministic bounded pulses and independent stop paths |
 
 This separation is intentional. The VLM can contribute semantic judgement and
@@ -747,7 +747,7 @@ Run all checks with:
 python -m pytest -q
 ```
 
-The release suite contains 49 Python core tests plus native localization,
+The release suite currently collects 55 Python core tests, plus native localization,
 deterministic-logic, ROS parity, fail-closed, motion, guard, and simulation
 tests; `colcon test-result` reports the exact aggregate. It covers newline protocol and extended sonar
 telemetry, stop-on-disconnect, geometric and ultrasonic guards, calibration
