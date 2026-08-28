@@ -52,6 +52,14 @@ std::vector<Action> allowed_actions(
 std::vector<Action> apply_ultrasonic_guard(
   const std::vector<Action> & actions, bool blocked);
 
+bool post_motion_observation_ready(
+  double image_capture_seconds,
+  double earliest_capture_seconds,
+  std::uint64_t pose_sequence,
+  std::uint64_t stop_pose_sequence,
+  double pose_received_seconds,
+  double legal_actions_received_seconds) noexcept;
+
 class CoverageGrid
 {
 public:

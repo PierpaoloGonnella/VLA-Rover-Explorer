@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -13,6 +14,7 @@
 #include "sensor_msgs/msg/range.hpp"
 #include "std_msgs/msg/u_int32.hpp"
 
+#include "rover_explorer_ros2/deterministic_logic.hpp"
 #include "rover_explorer_ros2/msg/legal_actions.hpp"
 #include "rover_explorer_ros2/msg/policy_decision.hpp"
 #include "rover_explorer_ros2/msg/rover_pose.hpp"
@@ -32,6 +34,7 @@ public:
     declare_parameter("translation_ms", 250);
     declare_parameter("turn_ms", 180);
     declare_parameter("settle_ms", 500);
+    declare_parameter("post_motion_localization_timeout_seconds", 2.0);
     declare_parameter("turn_scale", 0.55);
     declare_parameter("recovery_scan_timeout_seconds", 2.5);
     declare_parameter("recovery_cooldown_ms", 250);
@@ -122,6 +125,9 @@ private:
     sonar_blocked_ = message.sonar_blocked;
     if (emergency_stop_) {
       recovery_stage_.reset();
+      force_stop(legal_received_);
+    } else if (!sonar_blocked_) {
+      recovery_stage_.reset();
     } else if (
       get_parameter("policy").as_string() != "vlm" && sonar_blocked_ &&
       !was_blocked && !recovery_stage_.has_value())
@@ -144,6 +150,9 @@ private:
     decision_action_ = message.action;
     decision_received_ = SteadyClock::now();
     decision_seen_ = true;
+    if (decision_action_ == "stop") {
+      force_stop(decision_received_);
+    }
   }
 
   void on_pose(const msg::RoverPose & message)
@@ -153,6 +162,7 @@ private:
     }
     pose_heading_ = message.heading;
     pose_received_ = SteadyClock::now();
+    pose_capture_time_ = rclcpp::Time(message.header.stamp, get_clock()->get_clock_type());
     pose_seen_ = true;
     ++pose_sequence_;
   }
@@ -325,9 +335,18 @@ private:
 
   void force_stop(TimePoint now)
   {
+    if (active_action_ != "stop") {
+      const auto settle = std::chrono::milliseconds(
+        std::max<std::int64_t>(0, get_parameter("settle_ms").as_int()));
+      settle_until_ = now + settle;
+      observation_after_ros_ = get_clock()->now() + rclcpp::Duration(settle);
+      observation_pose_sequence_ = pose_sequence_;
+      observation_pending_ = true;
+      localization_timeout_reported_ = false;
+    }
     active_action_ = "stop";
     pulse_until_ = now;
-    settle_until_ = now;
+    pulse_stop_published_ = true;
     reset_turn_guard();
     publisher_->publish(twist("stop"));
   }
@@ -342,6 +361,37 @@ private:
     const auto recovery = legal_fresh && get_parameter("policy").as_string() != "vlm" ?
       recovery_request(now) : std::nullopt;
     const auto requested = recovery.has_value() ? *recovery : decision_action_;
+
+    // Once a pulse has ended, only an image captured after the actual STOP and
+    // the complete settling interval can authorize another pulse.  Merely
+    // receiving an old pose again cannot satisfy this contract.
+    if (observation_pending_) {
+      const bool pose_is_new = post_motion_observation_ready(
+        pose_capture_time_.nanoseconds() > 0 ? pose_capture_time_.seconds() :
+        std::numeric_limits<double>::quiet_NaN(),
+        observation_after_ros_.nanoseconds() > 0 ? observation_after_ros_.seconds() :
+        std::numeric_limits<double>::quiet_NaN(),
+        pose_sequence_, observation_pose_sequence_,
+        std::chrono::duration<double>(pose_received_.time_since_epoch()).count(),
+        std::chrono::duration<double>(legal_received_.time_since_epoch()).count());
+      const bool legal_is_new = legal_seen_ && pose_is_new;
+      if (now < settle_until_ || !pose_is_new || !legal_is_new) {
+        publisher_->publish(twist("stop"));
+        const auto timeout = get_parameter("post_motion_localization_timeout_seconds").as_double();
+        if (!localization_timeout_reported_ && now >= settle_until_ &&
+          seconds_since(now, settle_until_) >= timeout)
+        {
+          localization_timeout_reported_ = true;
+          RCLCPP_ERROR(
+            get_logger(),
+            "Post-motion localization timeout; holding STOP until a new post-settle frame is valid.");
+        }
+        return;
+      }
+      observation_pending_ = false;
+      localization_timeout_reported_ = false;
+      RCLCPP_INFO(get_logger(), "Fresh post-settle pose and legal actions received; motion rearmed.");
+    }
 
     if (
       !legal_fresh || (!recovery.has_value() && !decision_fresh) ||
@@ -360,6 +410,18 @@ private:
     }
     if (now < pulse_until_) {
       publisher_->publish(twist(active_action_));
+      return;
+    }
+    if (active_action_ != "stop" && !pulse_stop_published_) {
+      publisher_->publish(twist("stop"));
+      pulse_stop_published_ = true;
+      const auto settle = std::chrono::milliseconds(
+        std::max<std::int64_t>(0, get_parameter("settle_ms").as_int()));
+      settle_until_ = now + settle;
+      observation_after_ros_ = get_clock()->now() + rclcpp::Duration(settle);
+      observation_pose_sequence_ = pose_sequence_;
+      observation_pending_ = true;
+      localization_timeout_reported_ = false;
       return;
     }
     if (now < settle_until_) {
@@ -390,6 +452,7 @@ private:
     }
 
     active_action_ = requested;
+    pulse_stop_published_ = false;
     const auto duration_ms = is_turn(requested) ?
       get_parameter("turn_ms").as_int() : get_parameter("translation_ms").as_int();
     pulse_until_ = now + std::chrono::milliseconds(std::max<std::int64_t>(0, duration_ms));
@@ -411,6 +474,8 @@ private:
   TimePoint pulse_until_{};
   TimePoint settle_until_{};
   TimePoint turn_verification_after_{};
+  rclcpp::Time pose_capture_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time observation_after_ros_{0, 0, RCL_ROS_TIME};
   bool legal_seen_{false};
   bool decision_seen_{false};
   bool pose_seen_{false};
@@ -418,10 +483,14 @@ private:
   bool sonar_blocked_{false};
   bool turn_verification_pending_{false};
   bool turn_progress_blocked_{false};
+  bool pulse_stop_published_{true};
+  bool observation_pending_{false};
+  bool localization_timeout_reported_{false};
   std::uint32_t scan_sequence_{0};
   std::uint32_t scan_baseline_{0};
   std::uint64_t pose_sequence_{0};
   std::uint64_t turn_verification_pose_sequence_{0};
+  std::uint64_t observation_pose_sequence_{0};
   std::int64_t consecutive_turn_pulses_{0};
   double left_range_{INFINITY};
   double right_range_{INFINITY};

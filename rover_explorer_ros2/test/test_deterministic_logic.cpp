@@ -5,6 +5,18 @@
 
 #include "rover_explorer_ros2/deterministic_logic.hpp"
 
+TEST(PostMotionObservation, RequiresNewPostSettleFrameAndSubsequentLegalActions)
+{
+  EXPECT_FALSE(rover_explorer_ros2::post_motion_observation_ready(
+      10.3, 10.4, 2, 1, 20.0, 20.1));
+  EXPECT_FALSE(rover_explorer_ros2::post_motion_observation_ready(
+      10.5, 10.4, 1, 1, 20.0, 20.1));
+  EXPECT_FALSE(rover_explorer_ros2::post_motion_observation_ready(
+      10.5, 10.4, 2, 1, 20.1, 20.0));
+  EXPECT_TRUE(rover_explorer_ros2::post_motion_observation_ready(
+      10.5, 10.4, 2, 1, 20.0, 20.1));
+}
+
 namespace
 {
 using rover_explorer_ros2::Action;

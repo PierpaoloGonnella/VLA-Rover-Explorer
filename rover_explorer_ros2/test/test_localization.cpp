@@ -93,6 +93,76 @@ TEST(ArucoLocalization, RejectsBlankWrongAndOccludedMarkersWithoutCaching)
   EXPECT_FALSE(localizer.locate(occluded).has_value());
 }
 
+TEST(ArucoDiagnostics, ClassifiesFailuresAndCollectsGeometryAndImageQuality)
+{
+  localization::ArucoLocalizer localizer;
+  const auto valid = localizer.analyze(marker_frame(), 0.25);
+  EXPECT_EQ(valid.outcome, "valid");
+  ASSERT_TRUE(valid.pose.has_value());
+  EXPECT_EQ(valid.candidate_count, 1U);
+  EXPECT_EQ(valid.detected_ids, std::vector<int>({0}));
+  EXPECT_GT(valid.marker_mean_side_px, 60.0);
+  EXPECT_GT(valid.marker_boundary_distance_px, 0.0);
+  EXPECT_GT(valid.grayscale_mean, 0.0);
+  EXPECT_GT(valid.grayscale_stddev, 0.0);
+  EXPECT_GT(valid.sharpness, 0.0);
+
+  const auto blank = localizer.analyze(cv::Mat::zeros(480, 640, CV_8UC3), 0.25);
+  EXPECT_EQ(blank.outcome, "no_candidates");
+  EXPECT_FALSE(blank.pose.has_value());
+
+  const auto wrong = localizer.analyze(
+    marker_frame(cv::Point2f(320.0F, 240.0F), 0.0, 1), 0.25);
+  EXPECT_EQ(wrong.outcome, "wrong_marker_id");
+  EXPECT_FALSE(wrong.pose.has_value());
+
+  const auto low_confidence = localizer.analyze(marker_frame(), 1.1);
+  EXPECT_EQ(low_confidence.outcome, "below_confidence");
+  EXPECT_FALSE(low_confidence.pose.has_value());
+
+  const auto small = localizer.analyze(
+    marker_frame(cv::Point2f(320.0F, 240.0F), 0.0, 0, 32.0F), 1.5);
+  EXPECT_EQ(small.outcome, "too_small");
+  EXPECT_FALSE(small.pose.has_value());
+}
+
+TEST(ArucoConfiguration, ValidatesRangesAndSupportsExplicitCornerRefinement)
+{
+  localization::ArucoDetectorConfig defaults;
+  EXPECT_EQ(defaults.corner_refinement_method, cv::aruco::CORNER_REFINE_SUBPIX);
+  EXPECT_NO_THROW(localization::ArucoLocalizer(0, 0.0, defaults));
+
+  auto none = defaults;
+  none.corner_refinement_method = cv::aruco::CORNER_REFINE_NONE;
+  EXPECT_TRUE(localization::ArucoLocalizer(0, 0.0, none).locate(marker_frame()).has_value());
+
+  auto invalid = defaults;
+  invalid.adaptive_threshold_window_step = 0;
+  EXPECT_THROW(localization::ArucoLocalizer(0, 0.0, invalid), std::invalid_argument);
+  invalid = defaults;
+  invalid.error_correction_rate = 1.5;
+  EXPECT_THROW(localization::ArucoLocalizer(0, 0.0, invalid), std::invalid_argument);
+}
+
+TEST(ArucoNegativeControls, NeverPublishesPoseForBlurPartialGlareOrLowContrast)
+{
+  localization::ArucoLocalizer localizer;
+  auto blurred = marker_frame();
+  cv::GaussianBlur(blurred, blurred, cv::Size(61, 61), 20.0);
+  EXPECT_FALSE(localizer.analyze(blurred, 0.25).pose.has_value());
+
+  auto partial = marker_frame(cv::Point2f(12.0F, 240.0F));
+  EXPECT_FALSE(localizer.analyze(partial, 0.25).pose.has_value());
+
+  auto glare = marker_frame();
+  cv::rectangle(glare, cv::Rect(285, 205, 70, 70), cv::Scalar(255, 255, 255), -1);
+  EXPECT_FALSE(localizer.analyze(glare, 0.25).pose.has_value());
+
+  auto low_contrast = marker_frame();
+  low_contrast.convertTo(low_contrast, -1, 0.05, 120.0);
+  EXPECT_FALSE(localizer.analyze(low_contrast, 0.25).pose.has_value());
+}
+
 TEST(ColorLocalization, PreservesPositionOnlyAndConfidenceSemantics)
 {
   cv::Mat frame = cv::Mat::zeros(200, 300, CV_8UC3);

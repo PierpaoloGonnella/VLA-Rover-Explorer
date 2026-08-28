@@ -906,6 +906,10 @@ replaced by a cached pose. For parity diagnostics only, the retained fallback
 is available as `localizer_node_python`; do not launch it beside the default
 node on the same topics.
 
+Per-frame outcomes, bounded failure capture, camera-control experiments,
+stop-settle-observe semantics, and the session-analysis command are documented
+in [ArUco localization diagnostics](docs/localization_diagnostics.md).
+
 Measure both implementations on the same lossless synthetic frame set after a
 build and overlay setup:
 

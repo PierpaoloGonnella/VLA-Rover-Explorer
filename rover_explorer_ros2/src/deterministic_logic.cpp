@@ -7,6 +7,20 @@
 namespace rover_explorer_ros2
 {
 
+bool post_motion_observation_ready(
+  const double image_capture_seconds,
+  const double earliest_capture_seconds,
+  const std::uint64_t pose_sequence,
+  const std::uint64_t stop_pose_sequence,
+  const double pose_received_seconds,
+  const double legal_actions_received_seconds) noexcept
+{
+  return std::isfinite(image_capture_seconds) && std::isfinite(earliest_capture_seconds) &&
+         image_capture_seconds >= earliest_capture_seconds &&
+         pose_sequence > stop_pose_sequence &&
+         legal_actions_received_seconds >= pose_received_seconds;
+}
+
 std::pair<double, double> BodyToImage::direction(const Pose2D & pose) const
 {
   if (pose.heading.has_value()) {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -47,6 +48,7 @@ class RoverBle:
         self._write_with_response = True
         self._write_lock = asyncio.Lock()
         self._battery_mv: int | None = None
+        self._battery_received_at: float | None = None
         self._sonar_cm: int | None = None
         self._sonar_left_cm: int | None = None
         self._sonar_right_cm: int | None = None
@@ -58,6 +60,10 @@ class RoverBle:
     @property
     def battery_mv(self) -> int | None:
         return self._battery_mv
+
+    @property
+    def battery_received_at(self) -> float | None:
+        return self._battery_received_at
 
     @property
     def sonar_cm(self) -> int | None:
@@ -147,6 +153,7 @@ class RoverBle:
         if parsed and parsed[0] == "I" and parsed[1]:
             try:
                 self._battery_mv = int(parsed[1][0])
+                self._battery_received_at = time.monotonic()
             except ValueError:
                 LOGGER.debug("Invalid battery frame: %s", raw)
         elif parsed and parsed[0] == "E" and parsed[1]:

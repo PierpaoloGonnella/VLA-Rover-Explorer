@@ -23,10 +23,17 @@ def generate_test_description():
         package="rover_explorer_ros2",
         executable=_executable("localizer_node"),
         name="localizer_safety",
-        parameters=[{"min_confidence": 0.0}],
+        parameters=[{
+            "min_confidence": 0.0,
+            "capture_failure_images": True,
+            "failure_image_min_interval_seconds": 0.0,
+            "failure_image_max_per_session": 5,
+            "failure_image_annotated": True,
+        }],
         remappings=[
             ("/rover/image_raw", "/safety/image"),
             ("/rover/pose", "/safety/pose"),
+            ("/rover/localization/failure_image", "/safety/failure_image"),
         ],
     )
     guard = launch_ros.actions.Node(
@@ -62,9 +69,12 @@ class TestLocalizationLossSafety(unittest.TestCase):
     def setUp(self):
         self.node = rclpy.create_node("localizer_loss_test")
         self.legal = []
+        self.failure_images = []
         self.subscription = self.node.create_subscription(
             LegalActions, "/safety/legal_actions", self.legal.append, 10)
         self.images = self.node.create_publisher(Image, "/safety/image", 10)
+        self.failure_subscription = self.node.create_subscription(
+            Image, "/safety/failure_image", self.failure_images.append, 10)
         self.sonar = self.node.create_publisher(Range, "/safety/sonar", 10)
         self.frame = RoverSimulator(width=640, height=480, wheel_slip=0).render()
 
@@ -121,6 +131,15 @@ class TestLocalizationLossSafety(unittest.TestCase):
 
     def test_stopped_and_invalid_image_streams_fail_closed(self):
         self._wait_fresh()
+        blank = np.full_like(self.frame, 127)
+        original = self.frame
+        self.frame = blank
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline and not self.failure_images:
+            self.images.publish(self._image())
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        self.frame = original
+        self.assertTrue(self.failure_images, "annotated failure image was not published")
         self._wait_stale()
         self._wait_fresh()
         self._wait_stale(lambda: self._image(valid=False))
