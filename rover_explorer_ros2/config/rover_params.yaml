@@ -6,10 +6,47 @@
     camera_width: 1280
     camera_height: 720
     camera_fps: 10.0
+    camera_backend: auto
+    camera_buffer_size: 1
+    # Empty strings preserve backend defaults. Set one control at a time and
+    # inspect /rover/camera/diagnostics for accepted/effective values.
+    camera_autofocus: ""
+    camera_focus: ""
+    camera_auto_exposure: ""
+    camera_exposure: ""
+    camera_gain: ""
+    camera_brightness: ""
+    camera_contrast: ""
+    camera_white_balance: ""
     aruco_marker_id: 0
     # Marker +x points right; the rover nose points toward the marker top edge.
     aruco_heading_offset_degrees: -90.0
     min_confidence: 0.25
+    localization_settle_ms: 400
+    capture_failure_images: false
+    failure_image_min_interval_seconds: 2.0
+    failure_image_max_per_session: 50
+    failure_image_annotated: true
+    failure_image_queue_size: 4
+    failure_image_jpeg_quality: 85
+    # OpenCV defaults are retained except SUBPIX, which was already the project
+    # default before structured diagnostics were introduced.
+    aruco_adaptive_threshold_window_min: 3
+    aruco_adaptive_threshold_window_max: 23
+    aruco_adaptive_threshold_window_step: 10
+    aruco_adaptive_threshold_constant: 7.0
+    aruco_minimum_marker_perimeter_rate: 0.03
+    aruco_maximum_marker_perimeter_rate: 4.0
+    aruco_polygonal_approximation_accuracy_rate: 0.03
+    aruco_minimum_corner_distance_rate: 0.05
+    aruco_minimum_distance_to_border: 3
+    aruco_marker_border_bits: 1
+    aruco_perspective_remove_pixels_per_cell: 4
+    aruco_error_correction_rate: 0.6
+    aruco_corner_refinement: subpix
+    aruco_corner_refinement_window: 5
+    aruco_corner_refinement_iterations: 30
+    aruco_corner_refinement_accuracy: 0.1
     localization_backend: aruco_custom
     aruco_compare_topic: /aruco/markers
     camera_fx: 0.0
@@ -28,6 +65,7 @@
     translation_ms: 180
     turn_ms: 160
     settle_ms: 400
+    post_motion_localization_timeout_seconds: 2.0
     turn_scale: 0.85
     recovery_scan_timeout_seconds: 2.5
     recovery_cooldown_ms: 250
@@ -51,6 +89,9 @@
     pose_timeout_seconds: 1.0
     sonar_timeout_seconds: 1.0
     sonar_stop_distance_m: 0.25
+    battery_min_voltage: 3.0
+    battery_max_voltage: 9.0
+    battery_timeout_seconds: 2.0
     # Empirical estimate for PWM 220 / 180 ms at the current camera geometry:
     # 160 px * 180/400 ~= 72 px. Recalibrate after moving the camera.
     px_per_forward_pulse: 72.0

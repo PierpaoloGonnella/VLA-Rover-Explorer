@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+import time
+import cv2
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -33,6 +35,8 @@ class LocalizerNode(Node):
         self._publisher = self.create_publisher(RoverPose, "/rover/pose", 10)
         self._comparison_publisher = self.create_publisher(Float32, "/rover/localization/aruco_error_px", 10)
         self._last_custom = None
+        self._last_invalid_warning = 0.0
+        self._last_lost_warning = 0.0
         self.create_subscription(Image, "/rover/image_raw", self._on_image, 10)
         self._configure_ros2_aruco_comparison()
 
@@ -50,8 +54,20 @@ class LocalizerNode(Node):
         )
 
     def _on_image(self, message: Image) -> None:
-        pose = self._localizer.locate(self._bridge.imgmsg_to_cv2(message, desired_encoding="bgr8"))
+        try:
+            frame = self._bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
+            pose = self._localizer.locate(frame)
+        except (ValueError, cv2.error) as exc:
+            now = time.monotonic()
+            if now - self._last_invalid_warning >= 2.0:
+                self.get_logger().warning(f"Rejecting invalid image: {exc}")
+                self._last_invalid_warning = now
+            return
         if pose is None or pose.confidence < float(self.get_parameter("min_confidence").value):
+            now = time.monotonic()
+            if now - self._last_lost_warning >= 2.0:
+                self.get_logger().warning("No valid localization in the latest image")
+                self._last_lost_warning = now
             return
         result = RoverPose()
         result.header = message.header

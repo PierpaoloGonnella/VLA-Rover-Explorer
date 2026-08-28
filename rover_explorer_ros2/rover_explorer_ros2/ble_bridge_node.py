@@ -6,6 +6,7 @@ import queue
 import threading
 import time
 
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
@@ -14,6 +15,7 @@ from sensor_msgs.msg import BatteryState, Range
 from std_msgs.msg import Bool, UInt32
 
 from rover_explorer.ble import RoverBle
+from rover_explorer.telemetry import validate_battery_sample
 
 from .common import STOP_COMMAND
 
@@ -79,6 +81,9 @@ class BleBridgeNode(Node):
         self.declare_parameter("sonar_publish_hz", 10.0)
         self.declare_parameter("sonar_stop_distance_m", 0.25)
         self.declare_parameter("speed", 170)
+        self.declare_parameter("battery_min_voltage", 3.0)
+        self.declare_parameter("battery_max_voltage", 9.0)
+        self.declare_parameter("battery_timeout_seconds", 2.0)
 
         self._last_command = time.monotonic()
         self._emergency_stop = False
@@ -102,6 +107,9 @@ class BleBridgeNode(Node):
         }
         self._sonar_publisher = self.create_publisher(Range, "/rover/sonar", 10)
         self._battery_publisher = self.create_publisher(BatteryState, "/rover/battery", 10)
+        self._battery_diagnostics = self.create_publisher(
+            DiagnosticArray, "/rover/battery/diagnostics", 10
+        )
         self._scan_sequence_publisher = self.create_publisher(
             UInt32, "/rover/sonar/scan_sequence", 10
         )
@@ -163,9 +171,40 @@ class BleBridgeNode(Node):
         self._publish_range("right", self._rover.sonar_right_cm, -math.pi / 4)
         battery = BatteryState()
         battery.header.stamp = self.get_clock().now().to_msg()
-        battery.voltage = math.nan if self._rover.battery_mv is None else self._rover.battery_mv / 1000.0
-        battery.present = self._rover.connected
+        raw_mv = self._rover.battery_mv
+        received_at = getattr(self._rover, "battery_received_at", None)
+        reading = validate_battery_sample(
+            raw_mv,
+            received_at,
+            time.monotonic(),
+            float(self.get_parameter("battery_min_voltage").value),
+            float(self.get_parameter("battery_max_voltage").value),
+            float(self.get_parameter("battery_timeout_seconds").value),
+        )
+        battery.voltage = reading.voltage
+        # No calibrated voltage-to-state-of-charge curve exists: percentage is unknown.
+        battery.percentage = math.nan
+        battery.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_UNKNOWN
+        battery.power_supply_health = BatteryState.POWER_SUPPLY_HEALTH_UNKNOWN
+        battery.power_supply_technology = BatteryState.POWER_SUPPLY_TECHNOLOGY_UNKNOWN
+        battery.present = reading.valid
         self._battery_publisher.publish(battery)
+        diagnostics = DiagnosticArray()
+        diagnostics.header.stamp = battery.header.stamp
+        status = DiagnosticStatus()
+        status.name = "rover/battery/telemetry"
+        status.hardware_id = str(self.get_parameter("device_name").value)
+        status.level = DiagnosticStatus.OK if reading.valid else DiagnosticStatus.WARN
+        status.message = reading.reason
+        status.values = [
+            KeyValue(key="reason", value=reading.reason),
+            KeyValue(key="raw_millivolts", value="" if raw_mv is None else str(raw_mv)),
+            KeyValue(key="voltage", value=str(battery.voltage)),
+            KeyValue(key="fresh", value=str(reading.fresh).lower()),
+            KeyValue(key="percentage_calibrated", value="false"),
+        ]
+        diagnostics.status = [status]
+        self._battery_diagnostics.publish(diagnostics)
         scan = UInt32()
         scan.data = self._rover.sonar_scan_sequence
         self._scan_sequence_publisher.publish(scan)

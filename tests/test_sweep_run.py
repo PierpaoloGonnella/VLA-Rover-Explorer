@@ -35,6 +35,10 @@ async def test_sweep_policy_covers_complete_mock_grid(tmp_path, policy_name):
         annotation_style="grid",
         cycles=300,
         session_dir=tmp_path,
+        # Coverage-policy behavior must not depend on platform-specific ArUco
+        # calibration estimates. The simulator's nominal motion model is fixed
+        # for this test; calibration is verified by its dedicated test suite.
+        do_calibrate=False,
     )
 
     assert report["fraction_visited"] == 1.0

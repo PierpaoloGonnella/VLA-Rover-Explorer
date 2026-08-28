@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import threading
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -20,12 +21,64 @@ class CameraSource(ABC):
         pass
 
 
+CAMERA_BACKENDS = {
+    "auto": cv2.CAP_ANY,
+    "dshow": getattr(cv2, "CAP_DSHOW", cv2.CAP_ANY),
+    "msmf": getattr(cv2, "CAP_MSMF", cv2.CAP_ANY),
+    "v4l2": getattr(cv2, "CAP_V4L2", cv2.CAP_ANY),
+}
+
+CAMERA_PROPERTIES = {
+    "autofocus": cv2.CAP_PROP_AUTOFOCUS,
+    "focus": cv2.CAP_PROP_FOCUS,
+    "auto_exposure": cv2.CAP_PROP_AUTO_EXPOSURE,
+    "exposure": cv2.CAP_PROP_EXPOSURE,
+    "gain": cv2.CAP_PROP_GAIN,
+    "brightness": cv2.CAP_PROP_BRIGHTNESS,
+    "contrast": cv2.CAP_PROP_CONTRAST,
+    "white_balance": cv2.CAP_PROP_WB_TEMPERATURE,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class CameraControlResult:
+    requested: float
+    effective: float
+    accepted: bool
+
+
+def camera_backend(value: str) -> int:
+    name = value.strip().lower()
+    if name not in CAMERA_BACKENDS:
+        raise ValueError(f"Unsupported camera backend {value!r}; choose {', '.join(CAMERA_BACKENDS)}")
+    return CAMERA_BACKENDS[name]
+
+
 class WebcamSource(CameraSource):
-    def __init__(self, index: int = 0, width: int = 640, height: int = 480):
-        self.capture = cv2.VideoCapture(index)
-        self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    def __init__(
+        self,
+        index: int = 0,
+        width: int = 640,
+        height: int = 480,
+        *,
+        fps: float | None = None,
+        backend: str = "auto",
+        buffer_size: int = 1,
+        controls: dict[str, float] | None = None,
+    ):
+        backend_id = camera_backend(backend)
+        self.capture = cv2.VideoCapture(index, backend_id)
+        self.control_results: dict[str, CameraControlResult] = {}
+        self._apply("width", cv2.CAP_PROP_FRAME_WIDTH, float(width))
+        self._apply("height", cv2.CAP_PROP_FRAME_HEIGHT, float(height))
+        if fps is not None:
+            self._apply("fps", cv2.CAP_PROP_FPS, float(fps))
+        if buffer_size >= 0:
+            self._apply("buffer_size", cv2.CAP_PROP_BUFFERSIZE, float(buffer_size))
+        for name, requested in (controls or {}).items():
+            if name not in CAMERA_PROPERTIES:
+                raise ValueError(f"Unknown camera control {name!r}")
+            self._apply(name, CAMERA_PROPERTIES[name], float(requested))
         self.timestamp = 0.0
         if not self.capture.isOpened():
             raise RuntimeError(f"Could not open webcam index {index}")
@@ -38,6 +91,18 @@ class WebcamSource(CameraSource):
         if not self._ready.wait(timeout=3.0):
             self.close()
             raise RuntimeError(f"Webcam index {index} opened but produced no frames")
+
+    def _apply(self, name: str, property_id: int, requested: float) -> None:
+        accepted = bool(self.capture.set(property_id, requested))
+        effective = float(self.capture.get(property_id))
+        self.control_results[name] = CameraControlResult(requested, effective, accepted)
+
+    @property
+    def backend_name(self) -> str:
+        try:
+            return str(self.capture.getBackendName())
+        except cv2.error:
+            return "unknown"
 
     def _capture_loop(self) -> None:
         """Continuously consume the backend queue so callers never receive stale frames."""
